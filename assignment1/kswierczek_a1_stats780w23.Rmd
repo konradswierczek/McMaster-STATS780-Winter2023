@@ -2,11 +2,16 @@
 title: |
   | STATS/CSE 780
   | Homework Assignment 1
-author: "Konrad Swierczek"
+author: "Konrad Swierczek - 001423065"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 header-includes:
    - \usepackage{float}
    - \usepackage[font={footnotesize}]{caption}
+   - \usepackage{fancyhdr}
+   - \pagestyle{fancy}
+   - \fancyhf{}
+   - \fancyhead[L]{STATS 780 Assignment 1}
+   - \fancyhead[R]{\thepage}
 output: 
   pdf_document:
     extra_dependencies: ["float"]
@@ -15,10 +20,10 @@ geometry: margin = 1in
 linestretch: 1.5
 bibliography: references.bib
 csl: https://www.zotero.org/styles/apa-single-spaced
-nocite: '@*'
 ---
 \newpage
 ```{r setup, include=FALSE}
+
 # knitr setup
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
@@ -29,12 +34,13 @@ library(readr)
 library(shiny)
 library(dplyr)
 library(knitr)
+library(lubridate)
 
 ```
 
 # Introduction
 
-Throughout 2022, Canadians experienced higher than usual increases in prices of consumer goods. However, the reality of these prices increases varies depending on province as well as the type of products. This report visualizes trends in the price of consumer products across Canada during 2022 and show that while prices did increase, both province and prouduct type are mediating factors in how much prices may have increased and when. 
+Throughout 2022, Canadians experienced increased costs for consumer goods. However, many factors influence the price of everyday essentials. This report visualizes trends in the price of consumer products across Canada during 2022 and shows that while prices did increase, both province and prouduct type have an influence on these changes.^[All materials and reproducible code used are available at https://github.com/konradswierczek/STATS780] 
 
 ```{r data, include=FALSE}
 # "Monthly average retail prices for selected products"
@@ -48,60 +54,57 @@ metadata <- read_csv(unz(temp, "18100245_MetaData.csv"))
 unlink(temp)
 
 # Tidy Data
-tidyData <- data
+tidy_data <- data
 # Subset data for only 2022
-tidyData$date <- lubridate::ymd(paste(data$REF_DATE, "-01", sep = ""))
-tidyData <- subset(tidyData, date > "2021-12-31" & date < "2023-01-01")
+tidy_data$date <- lubridate::ymd(paste(data$REF_DATE, "-01", sep = ""))
+tidy_data <- subset(tidy_data, date > "2021-12-31" & date < "2023-01-01")
 # Add entries for means of all products
-means <- tidyData %>%
+means <- tidy_data %>%
   group_by(GEO, date) %>%
   summarise_at(vars(VALUE), list(VALUE = mean))
 means$Products <- "All Products"
-tidyData <- bind_rows(tidyData, means)
+tidy_data <- bind_rows(tidy_data, means)
 
 # Write .RData for shinyapp
-save(tidyData, file = "shiny/tidyData.RData")
+save(tidy_data, file = "shiny/tidy_data.RData")
 
 ```
 
 # Methods
-The dataset "Mothly average retail prices for selected products" [@dataset] was retrieved from Statstics Canada. This data is available from 2017 and is collected monthly. For the purposes of this report, only data from 2022 was used. Data for all provinces and all of Canada was used. 110 products ranging from produce to personal hygiene products are displayed. All products were used, as well as the mean of all 110 products combined. Data is at present unavailble for December of 2022. Some data are not available in certain provinces due to data or product availablity (for instance, four litre milk bags are not availble in Newfoundland & Labrador at scale).
+The dataset "Monthly average retail prices for selected products" [@dataset] was retrieved from Statstics Canada. This data is available from 2017 onwards and is collected monthly from all provinces (this report also includes averaged data across provinces). For the purposes of this report, only data from 2022 is considered (Data is at present unavailable for December of 2022). 110 products ranging from produce to hygiene products and the mean of all products are included. Some data are not available in certain provinces; likely due to product availablity (e.g., four litre milk bags are not availble in Newfoundland & Labrador). All data processing and visualization was performed using R and the tidyverse package [@citeR; @tidyverse].
 
-# Results
-
-Consumer products did increase in price across 2022, with an average price of $`r 5+5` in January and $`r 5+5` in November (see [@fig1]). However, the data indicates that a significant decrease in prices occured in October. 
-
-```{r fig1, echo=FALSE, fig.cap="Average price of 110 consumer products in Canada. Prices are in Canadian dollars. Data is collected monthly."}
+```{r fig1, echo=FALSE, fig.align='center',  out.width="75%", fig.cap="Average price of 110 consumer products in Canada. Prices are in Canadian dollars. Data is collected monthly."}
 # Figure 1: Price in  Canada have increased
-ggplot(data = subset(subset(tidyData, Products == "All Products"), GEO == "Canada")) +
+ggplot(data = subset(subset(tidy_data, Products == "All Products"),
+                     GEO == "Canada")) +
         geom_line(aes(x = date, y = VALUE)) +
         xlab("Month (2022)") +
         ylab("Product Price (Canadian Dollars)") +
         scale_x_date(date_breaks = "months", date_labels = "%b") +
-        theme(text = element_text(size = 12)) 
+        theme(text = element_text(size = 17))
 
 ```
 
- Provincial differences \@ref(fig:fig1).
+# Results
+Consumer product prices did increase during 2022, with an average price of $`r round(mean(tidy_data[tidy_data$date >= "2022-01-01" & tidy_data$date <= "2022-01-31", ]$VALUE), 2)` in January and $`r round(mean(tidy_data[tidy_data$date >= "2022-11-01" & tidy_data$date <= "2022-11-01", ]$VALUE), 2)` in November (see Figure \ref{fig:fig1}). However, the data also indicates that a significant decrease in prices occured in the Fall. The increasing trend, as well as the sudden decrease in prices in the Fall, is generally visible across all provinces (although this decrease is greater in Quebec).  Figure \ref{fig:fig2} shows the average price of all 110 products for each province. In addition to the general increase in prices, in Ontario average prices increased significantly in May before rebounding. Each province also had different baseline prices for most provinces which influences how they change over time. While a normalization could have been performed to offset this, the baseline prices for each province are in of themselves of interest as they are influenced by policy and economic factors.
 
-```{r fig2, echo=FALSE, fig.cap="Average price of 110 consumer products across all Canadian provinces. Prices are in Canadian dollars. Data is collected monthly."}
+```{r fig2, echo=FALSE, fig.align='center', fig.cap="Average price of 110 consumer products across all Canadian provinces. Prices are in Canadian dollars. Data is collected monthly."}
 # Figure 2: These trends vary by province
-ggplot(data = subset(subset(tidyData, Products == "All Products"), GEO != "Canada")) +
+ggplot(data = subset(subset(tidy_data, Products == "All Products"),
+                     GEO != "Canada")) +
         geom_line(aes(x = date, y = VALUE, colour = GEO)) +
         labs(colour = "Province") +
         xlab("Month (2022)") +
         ylab("Product Price (Canadian Dollars)") +
         scale_x_date(date_breaks = "months", date_labels = "%b") +
-        theme(text = element_text(size = 12)) 
-        
+        theme(text = element_text(size = 12))
+
 ```
 
-Finally in this [*$\color{blue}{\text{Shiny app}}$*](https://swierckj.shinyapps.io/assignment1/), each individual product is displayed. 
+Despite the visible increase in prices, the average change over the year is less than a dollar. In order to consider how price increases might impact consumers, the attatched [*$\color{blue}{\text{Shiny app}}$*](https://swierckj.shinyapps.io/assignment1/) displays all 110 products individually. Users can interactively select any product and view the price throughout the year for each province or Canada-wide. When viewed individually, some items nearly doubled in price from January to November (e.g., strawberries) while others actually decreased (e.g., striploin) throughout the year. 
 
 # Conclusions
-What do we conclude?
-
-ALl materials are available at. 
+This report indicates that Canadians have experienced an increase in cost of consumer goods such as food and hygenic products throughout 2022. This trend is apparent across many of the individual 110 items in the dataset, and is present in all provinces. The cause of this increase should be explored further by analyzing which specific products became more or less expensive, as well as social, economic, and policy changes that may have occured (for instance, increased interest in the price of groceries by the media and the Competition Bureau Canada [@competition] and changing global supply line conditions). Finally, data from previous years should be compared to 2022 to determine if these increases are proportional to past increases. The price of consumer goods has an immense impact on the daily lives of Canadians, making this data and the underlying causes incredibly revelant and important to deseminate widely in a format accessible to the average Canadian.
 
 \newpage
 # References
@@ -112,3 +115,6 @@ ALl materials are available at.
 # Supplementary Materials
  ```{r show-code, ref.label=all_labels(), echo = TRUE, eval=FALSE}
  ```
+
+```{r shiny, file='shiny/app.r', eval=FALSE}
+```
