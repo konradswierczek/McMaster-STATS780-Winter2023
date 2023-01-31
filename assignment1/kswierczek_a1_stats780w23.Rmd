@@ -1,0 +1,114 @@
+---
+title: |
+  | STATS/CSE 780
+  | Homework Assignment 1
+author: "Konrad Swierczek"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+   - \usepackage[font={footnotesize}]{caption}
+output: 
+  pdf_document:
+    extra_dependencies: ["float"]
+fontsize: 11pt
+geometry: margin = 1in
+linestretch: 1.5
+bibliography: references.bib
+csl: https://www.zotero.org/styles/apa-single-spaced
+nocite: '@*'
+---
+\newpage
+```{r setup, include=FALSE}
+# knitr setup
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+
+# imports
+library(ggplot2)
+library(readr)
+library(shiny)
+library(dplyr)
+library(knitr)
+
+```
+
+# Introduction
+
+Throughout 2022, Canadians experienced higher than usual increases in prices of consumer goods. However, the reality of these prices increases varies depending on province as well as the type of products. This report visualizes trends in the price of consumer products across Canada during 2022 and show that while prices did increase, both province and prouduct type are mediating factors in how much prices may have increased and when. 
+
+```{r data, include=FALSE}
+# "Monthly average retail prices for selected products"
+# https://doi.datacite.org/dois/10.25318%2F1810024501-eng
+
+# Pull Data
+temp <- paste(tempfile(), ".zip", sep = "")
+download.file("https://www150.statcan.gc.ca/n1/tbl/csv/18100245-eng.zip", temp)
+data <- read_csv(unz(temp, "18100245.csv"))
+metadata <- read_csv(unz(temp, "18100245_MetaData.csv"))
+unlink(temp)
+
+# Tidy Data
+tidyData <- data
+# Subset data for only 2022
+tidyData$date <- lubridate::ymd(paste(data$REF_DATE, "-01", sep = ""))
+tidyData <- subset(tidyData, date > "2021-12-31" & date < "2023-01-01")
+# Add entries for means of all products
+means <- tidyData %>%
+  group_by(GEO, date) %>%
+  summarise_at(vars(VALUE), list(VALUE = mean))
+means$Products <- "All Products"
+tidyData <- bind_rows(tidyData, means)
+
+# Write .RData for shinyapp
+save(tidyData, file = "shiny/tidyData.RData")
+
+```
+
+# Methods
+The dataset "Mothly average retail prices for selected products" [@dataset] was retrieved from Statstics Canada. This data is available from 2017 and is collected monthly. For the purposes of this report, only data from 2022 was used. Data for all provinces and all of Canada was used. 110 products ranging from produce to personal hygiene products are displayed. All products were used, as well as the mean of all 110 products combined. Data is at present unavailble for December of 2022. Some data are not available in certain provinces due to data or product availablity (for instance, four litre milk bags are not availble in Newfoundland & Labrador at scale).
+
+# Results
+
+Consumer products did increase in price across 2022, with an average price of $`r 5+5` in January and $`r 5+5` in November (see [@fig1]). However, the data indicates that a significant decrease in prices occured in October. 
+
+```{r fig1, echo=FALSE, fig.cap="Average price of 110 consumer products in Canada. Prices are in Canadian dollars. Data is collected monthly."}
+# Figure 1: Price in  Canada have increased
+ggplot(data = subset(subset(tidyData, Products == "All Products"), GEO == "Canada")) +
+        geom_line(aes(x = date, y = VALUE)) +
+        xlab("Month (2022)") +
+        ylab("Product Price (Canadian Dollars)") +
+        scale_x_date(date_breaks = "months", date_labels = "%b") +
+        theme(text = element_text(size = 12)) 
+
+```
+
+ Provincial differences \@ref(fig:fig1).
+
+```{r fig2, echo=FALSE, fig.cap="Average price of 110 consumer products across all Canadian provinces. Prices are in Canadian dollars. Data is collected monthly."}
+# Figure 2: These trends vary by province
+ggplot(data = subset(subset(tidyData, Products == "All Products"), GEO != "Canada")) +
+        geom_line(aes(x = date, y = VALUE, colour = GEO)) +
+        labs(colour = "Province") +
+        xlab("Month (2022)") +
+        ylab("Product Price (Canadian Dollars)") +
+        scale_x_date(date_breaks = "months", date_labels = "%b") +
+        theme(text = element_text(size = 12)) 
+        
+```
+
+Finally in this [*$\color{blue}{\text{Shiny app}}$*](https://swierckj.shinyapps.io/assignment1/), each individual product is displayed. 
+
+# Conclusions
+What do we conclude?
+
+ALl materials are available at. 
+
+\newpage
+# References
+::: {#refs}
+:::
+
+\newpage
+# Supplementary Materials
+ ```{r show-code, ref.label=all_labels(), echo = TRUE, eval=FALSE}
+ ```
