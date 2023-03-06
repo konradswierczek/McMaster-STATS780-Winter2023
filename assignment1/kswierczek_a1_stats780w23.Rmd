@@ -25,7 +25,7 @@ csl: https://www.zotero.org/styles/apa-single-spaced
 ```{r setup, include=FALSE}
 
 # knitr setup
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
 
 # imports
