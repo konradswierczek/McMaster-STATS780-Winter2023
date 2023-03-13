@@ -1,0 +1,148 @@
+---
+title: |
+  | Consonant & Dissonant Musical Sonorities:
+  | A Data Science Approach
+subtitle: |
+  |
+  | STATS/CSE 780
+  | Project Proposal
+author: "Konrad Swierczek - 001423065"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+   - \usepackage[font={footnotesize}]{caption}
+   - \usepackage{fancyhdr}
+   - \pagestyle{fancy}
+   - \fancyhf{}
+   - \fancyhead[L]{STATS 780 Project Proposal}
+   - \fancyhead[R]{\thepage}
+format: 
+  pdf:
+    fontsize: "11pt"
+geometry: margin = 1in
+linestretch: 1.5
+bibliography: references.bib
+output-file: "kswierczek_proposal" 
+---
+\newpage
+
+```{r setup, include=FALSE}
+# knitr setup
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+################################################################################
+# Imports
+packages <- c("dplyr", "readr", "ggplot2", "knitr", "ggcorrplot", "tidyr")
+lapply(packages, library, character.only = TRUE)
+################################################################################
+set.seed(75)
+```
+
+```{r data, include=FALSE}
+# Anatomy of Consonance Dataset
+# https://github.com/tuomaseerola/anatomy-of-consonance
+# Pull Data
+temp <- paste(tempfile(), ".zip", sep = "")
+options(timeout = 60 * 10)
+"https://github.com/tuomaseerola/DCD/archive/refs/heads/master.zip" %>%
+download.file(temp)
+experiment1 <- unz(temp, "DCD-master/data/DCD_predictors.csv") %>%
+  read_csv()
+"github.com/tuomaseerola/anatomy-of-consonance/archive/refs/heads/main.zip" %>%
+download.file(temp)
+link <- "anatomy-of-consonance-main/data/experiment2_data.csv"
+experiment2 <- unz(temp, link) %>%
+  read_csv()
+link <- "anatomy-of-consonance-main/data/experiment3_data.csv"
+experiment3 <- unz(temp, link) %>%
+  read_csv()
+vars <- c(7, 11:27, 27:34, 37:39, 42)
+# Missing values for feature variables>
+table(is.na(experiment3[, vars]))
+# Missing values for ratings
+table(is.na(experiment3[, 7]))
+# Missing values for rating SD/SE
+table(is.na(experiment3[, 8:9]))
+```
+
+# Introduction
+
+Considerable debate has been devoted to musical consonance and dissonance, or the pleasantness of a sound. The study of this phenomenon goes as far back as Pythagoras, but the 20th and 21st centuries, and our understanding of acoustics, auditory perception, and mathematics, led to experimental and modelling solutions. Theories ranging from "roughness" (interactions of tones on the basilar membrane) [@plomp65; @kam69I; @kam69II; @hutch78; @hutch79; @mashinter06], "harmonicity" or "periodicity" (how similar is a sound to a harmonic series) [@parn88; @milne16; @har18], and familiarity [@zaj01, @parn11, @jl12, @mcder16, @lah22]. @har20 and @anatomy21 set out to compare state-of-the-art models of consonance and dissonance to human behaviur data. The results of these studies found a combination of the these models may be necessary to explain the underlying mechanisms of consonance and dissonance. Here, a re-examination of the datasets explored in @har20 and @anatomy21 will attempt to develop solutions for prediction and classification of consonant and dissonant sounds. Despite the progress made, it is still unclear if there is a line between these two percepts in a binary sense. Unsupervised learning methods can aid in determining if a boundary exists between consonant and dissonant sounds, while supervised learning can help use the underlying features to generate a predictive model for determining how new sounds will be classified. In addition, feature selection will be used to narrow the scope of any predictive model to statistically salient features. ^[All materials and reproducible code used are available at https://github.com/konradswierczek/STATS780] 
+
+# Methods
+
+The Anatomy of Consonance dataset [@anatomy21] is a collection of 9 datasets with 617 observations from human behaviour experiments on consonance/disonance perception. It includes 33 feature continous feature, three of which will be excluded due to lack of clarity in documentation ("TDL", "TDL1", "neg_log_prob"), 7 metadata properties (only the categorical variable "dataset" refering to the source of the observation is of interest here), and 3 normalized rating variables which correspond to the mean, standard deviation and standard error of human participant ratings for a particular sound (observation). The features include various roughness, harmonicity, periodicity, spectral profile, and familiarity models as well as features describing the numerosity, or amount of pitches, in a sound. 
+
+First, linear regression using forward stepwise subset selection and cross validation will be performed on the dataset to create a model that predicts rating while also selecting only the most relevant features out of the large pool. However, the above approach does not guarantee the subset of features selected will represent the most suitable group of features, much less an approximation of human perception since all of these features have in their own way been implicated in perceptual processes. A second linear regression will be performed on components generated using principal component analysis. The performance of these two different approaches can be compared directly on a hold-out dataset. Alternatively, an unsupervised learning approach not relying on ratings will use k-means clustering (k=2) to find consonant and dissonant clusters. The result of this analysis will be used with logistic regression to predict consonant and dissonant sounds. 
+
+These two approaches use different underlying assumptions to develop a model for consonance and dissonance: one assumes humans rate sounds in a roughly binary fashion (i.e., something is either dissonant or consonant to varying degrees), or dissonance is simply a continous variable akin to "cold" being an absence of heat. This analysis will help shed light on this issue.
+
+All analyses will be performed in R and Python [@citeR; @citePY]
+
+# Exploratory Results
+
+Results of correlation analysis. Outlier exclusion is not necessary for the rating variable as it is already an average of multiple participants and has been normalized by @anatomy21. Outliers will not be exccluded for the feature variables numerosity and pitch range due to these sounds being outside of common musical practice. None of the feature variables or rating variable have missing values, but the standard deviation and standard error for the ratings are missing values. HJowever, these values will likely not be used in the analysis. Some of the features are highly correlated and variable (@fig-cor_matrix, @fig-feature_dist), making this dataset a ideal candidate for principal component analysis [@islr2]. @fig-rating_dist shows the distribution of rating values, which appears to be a skewed or bimodal distribution consistent with the idea that chords are grouped into consonant or dissonant (the peak at a lower value is also consistent with the western music general preference for consonant sounds).
+
+```{r, out.width="50%"}
+#| label: fig-rating_dist
+#| fig-cap: "Distribution of ratings across 617 observations. Each observation
+#| is the average of all participants in the experiment."
+# Distribution of ratings
+binwidth <- function(col) ((max(col)-min(col))/sqrt(length(col)))
+ggplot(experiment3, aes(x = rating)) +
+  geom_histogram(binwidth = binwidth(experiment3$rating),
+                 colour = "cornflowerblue", fill = "gray") +
+  xlab("Rating (1-10)") +
+  ylab("Frequency")
+```
+
+# Next Steps
+
+Model training and data analysis, and interpretation of the results will be completed by the end of March, 2023. Presentation of the results to the STATS/CSE780 class will be held in the first half of April, pending scheduling. The final report will be completed by April 17, 2023. 
+
+The results of this study should not only further our understanding of consonance and dissonance, but also create a more simple modelling approach for applied tasks including music perception experiments, content-based music classification and reccomendation systems, and other auditory perception challenges such as developing hearing aids enhanced for music.  
+
+\newpage
+
+# References
+
+::: {#refs}
+:::
+
+\newpage
+
+# Supplementary Materials
+
+```{r}
+#| label: fig-cor_matrix
+#| echo: false
+#| fig-cap: "Figure caption goes here!"
+# Correlation matrix for features
+cor_mat <- round(cor(experiment3[, vars]), 3)
+ggsave("img/cor_matrix.png", width = 8.5, height = 11,
+  ggcorrplot(cor_mat, insig = "blank", type = "lower")
+)
+
+```
+
+
+```{r}
+ggsave("img/feature_dist.png", width = 8.5, height = 11,
+  ggplot(gather(experiment3[, vars], feature, val),
+              aes(y = val, fill = feature)) +
+  geom_boxplot() +
+  facet_wrap(~feature, scales = "free") +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), legend.position = "none", 
+        strip.text.x = element_text(size = 7))
+)
+```
+
+![Correlation matrix of all feature variables. Some are highly correlated as they are different approximations of the same percpetual feature, while others are negatively correlated due to features like roughness and harmonicity often being at least partially inverse.](img/cor_matrix.png){#fig-cor_matrix}
+
+![Distribution of continuous feature variables. As all the variables are sourced from different publications and represent various constructs, they appear to be fairly different from one another.](img/feature_dist.png){#fig-feature_dist}
+
+ ```{r show_code, ref.label=all_labels()}
+ #| echo: TRUE
+ #| eval: FALSE
+ ```

@@ -27,7 +27,7 @@ csl: https://www.zotero.org/styles/apa-single-spaced
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
 # Imports
-packages <- c("ggplot2", "readr", "dplyr", "knitr", "tidyr", "gridExtra", 
+packages <- c("ggplot2", "readr", "dplyr", "knitr", "tidyr", "gridExtra",
               "ggcorrplot", "class", "glmnet", "plotROC", "pROC", "tree", "caret")
 lapply(packages, library, character.only = TRUE)
 # Set Seed
@@ -119,7 +119,7 @@ pop_test <- slice(tidy_data, -pop_index)
 
 Automated music genre classification tasks rely predominantly on audio feature extraction. The Echonest, purchased by Spotify in 2014, uses a set of 8 audio features for audio fingerprinting and genre classification, which is subsequently used for automated playlist development, and content-based reccomendation systems [@echonest]. This study examinea the FMA (Free Music Archive, https://github.com/mdeff/fma) database, a free database for developing MIR (Music Information Retreival) [@fma] tools to evaluate The Echonest's audio features and their viability for music classification. Since The Echonest and subsequently Spotify have chosen to keep these features proprietary, investigating the relation between these features and subjective outcomes such as musical genre and popularity are one of the few ways to evaluate what these features signify. The FMA is a database containing 106,574 musical tracks and relevant audio features, metadata, and listening statistics. This study examines a subset of 13,129 tracks for which The Echonest's audio features are available. 
 
-```{r cor_mat, out.width="65%", fig.align='center', fig.cap="Correlation matrix for all The Echonest's audio features. Includes all 13,129 tracks from The Echonest subset of the FMA dataset.", }
+```{r cor_mat, out.width="65%", fig.align='center', fig.cap="Correlation matrix for all The Echonest's audio features. Includes all 13,129 tracks from The Echonest subset of the FMA dataset." }
 # Correlation Matrix
 cor_mat <- round(cor(tidy_data %>% dplyr::select(-1, -2, -11)), 3)
 ggcorrplot(cor_mat, hc.order = TRUE, lab = TRUE)
