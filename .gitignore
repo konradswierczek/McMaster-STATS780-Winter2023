@@ -2,3 +2,5 @@
 scratchpad
 # logs (e.g., latex logs)
 *.log
+# python cache
+__pycache__/

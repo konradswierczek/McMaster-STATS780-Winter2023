@@ -1,0 +1,246 @@
+---
+title: |
+  | STATS/CSE 780
+  | Homework Assignment 3
+author: "Konrad Swierczek - 001423065"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+   - \usepackage[font={footnotesize}]{caption}
+   - \usepackage{fancyhdr}
+   - \pagestyle{fancy}
+   - \fancyhf{}
+   - \fancyhead[L]{STATS 780 Assignment 3}
+   - \fancyhead[R]{\thepage}
+format: 
+  pdf:
+    fontsize: "11pt"
+geometry: margin = 1in
+linestretch: 1.5
+bibliography: references.bib
+output-file: "kswierczek_stats780w23_assignment3" 
+---
+\newpage
+
+```{r setup, include=FALSE}
+# knitr setup
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+################################################################################
+# Imports
+packages <- c("tidyverse", "ggcorrplot", "cluster", "factoextra", "reticulate",
+              "ggfortify", "knitr")
+lapply(packages, library, character.only = TRUE)
+################################################################################
+set.seed(75)
+```
+
+```{r pre_data, eval=FALSE}
+# Pull data
+# Retrieved from bachcentral.com, a source for MIDI files.
+temp <- paste(tempfile(), ".zip", sep = "")
+options(timeout = 60 * 10)
+download.file("https://www.bachcentral.com/bach.zip", temp)
+unzip(temp, exdir = "assignment3/data/midi")
+```
+
+```{python pcd, eval=FALSE}
+# Performing PCD extraction on dataset and generating csv for analysis in R.
+# See pcd_extract.py for details.
+from pcd_extract import *
+pcd_dataframe('assignment3/data/midi/bach', 
+              outpath = "assignment3/data/data.csv")
+```
+
+```{r data}
+# Import Data
+data <- read_csv("data/data.csv") %>%
+# Remove NA values using first column.
+drop_na("0") %>%
+# Renaming index column.
+rename(`piece` = `...1`) %>%
+# Changing filepath to a readable format: just the filename without extension.
+separate(piece, c('a', 'b', 'c', 'd', 'e', 'piece')) %>%
+select(6:18)
+```
+
+# Introduction
+
+Music contains many patterns and statistical regularities, some of which are abstract yet salient to the average encultured listener. Indeed, the remarkable human capacity for implicit knowledge and expertise of structure in music provokes an explanation. Numerous mechanistic models [@tonalpitch; @krumfound; @icp2009] of heirarchical relations in musical pitch have been proposed based on empirical evidence from human behaviour experiments. However, the unique features involved in the perception of pitch of western music may provide an opportunity to use unsupervised statistical learning to approximate these abstract patterns. @unsuper10 applied unsupervised statistical learning to modelling human learning and development of expectation in western music. This study uses Pitch Class Distibutions (PCD) with clustering and dimensionality reduction to explore the heirarchical organization of pitch in the music of J.S. Bach. Pitch Class Distributions are 12 dimensional vectors that describe the concentration of each pitch-class (unique pitch or note) in the 12-tone equal temperment system (the pitch tuning system which is dominant in western music for at least the past hundred years) [@et07]. PCDs have previously been used to understand heriarchical organization of pitch [@krumfound; @keyscapes20; @tdm20] and seem to account for much of the information the brain uses to compute these heirachies. PCDs are suitable for unsupervised learning techniques as they are high dimensional (ideal for dimensionality reduction) and are relatively abstract to interpret on their own. However, they are also generally thought to belong to discrete groups [@krumfound] and therefore ideal for clustering and dimensionality reduction to improve interpretability. ^[All materials and reproducible code used are available at https://github.com/konradswierczek/STATS780] 
+
+# Methods
+
+A collection of 228 Musical Instrument Digital Interface (MIDI) files representing the works of J.S. Bach were accessed from the "Bach Central" database (bachcentral.com). These files were processed through a bespoke algorithm for extracting PCDs[@citePY; @music21].^[see github repository for details] 6 files were removed due to failure to complete the PCD (missing values). Three unsupervised statisical learning methods were applied to this dataset: heirarchical clustering, k-means clustering, and heirachrical clustering using principal component analysis. Scaling of the features was not performed since these PCDs were already normalized to range from [0-1]. Average linkage was used for both heirarchical clusterings since the data cotains outliers that may influence a single or complete linkage approach (see @fig-boxplot). Rand index analysis was performed between each of the models to determine compabitibility of the clusterings. The value of k=12 for al clusterings were determined using silhouette analysis as seen in @fig-silkmax, @fig-silk2, and @fig-silk3. This value also corresponds with the amount of "keys" or tonal heirachies in this system. Two principal components were used to maximize visual interpreatability: since the first two components account for over 70% of the variance, additional components were not deemed necessary.
+
+# Results
+
+The results of K-means clustering are summarized in @fig-kmeans. Since key labels were unavailable for this dataset, comparisons were not possible. @fig-silkmax shows a peak average silhouette value at 12 clusters, which corresponds to the amount of pitches in the tuning system, or heirachires available. @fig-silk1 indicates a good fit with k=12, with few values below zero and all clusters partially above the average. Since the dataset has not been selected with a balanced amount of observations from each pitch heirarchy or key, smaller clusters may lack sufficient sample size. However, performance in silhouette plots worsens for both heirarchical clusterings. Although clusters remain generally above the average, increasing amounts of observations dip below zero. A more balanced and larger sample may be necessary to accuratley represent all clusters. @fig-h_cluster and @fig-pca_hc are dendrograms of the heirarchical clusterings. Due to the relatively large sample, interpreting these at the lowest level is difficult. Principle component analysis revealed only a few components are necessary to account for the majority of the variance in the data (@fig-pca). In @fig-circle, clusters represented in two-dimensional space conform to a circular shape, which may approximate previous theories such as the circle of fifths and the Tonnetz (@tdm20, @tonalpitch). Finally, @fig-comps show Rand scores between the three clustering methods. The three clustering methods are highly compatible with each other, likely due to similar cluster sizes.
+
+```{r kmeans}
+# k-means clustering
+km.out <- kmeans(data[, 2:13], 12, nstart = 20)
+km.clusters <- km.out$cluster
+```
+
+```{r hc_clusters}
+# Heirarchical clustering
+data.dist <- dist(data[, 2:13])
+hc1.clusters <- cutree(hclust(data.dist, method = "average"), 12) 
+```
+
+```{r}
+#| label: fig-circle
+#| fig-cap: "Results of principal component anaysis and heirachrical clustering.
+#| Each point represents a piece of music (observation). Axes correspond to
+#| principal components. Colour of point corresponds to computed cluster of the
+#| observation."
+# Principle component analysis
+pca <- prcomp(data[, 2:13])
+# Heirarchical clustering on first two principal components.
+hc.out <- hclust(dist(pca$x[, 1:2]), method = "average") 
+pcahc_clusters <- cutree(hc.out, 12)
+# Plotting principal components with clusters as colours.
+as_tibble(pca$x[, 1:2]) %>%
+  add_column(`cluster` = pcahc_clusters) %>%
+    ggplot(aes(x = PC1, y = PC2)) +
+      geom_point(aes(colour = as.factor(cluster))) +
+      labs(colour = "Cluster")
+```
+
+# Conclusions
+
+Unsupervised statisitcal learning techniques such as clustering and principle component analysis may prove useful for better understanding musical heirarchy and tonality, as well as making PCDs more interpretable and comparable. While this study shows the potential of PCDs for this application, datasets with key labels would reveal if the clusters formed in here indeed correspond with the human percept of key. If so, future work may investigate what patterns are responsbile for this clustering. These methods show that unsupervised learning can be suitable for determining not only the tonal pitch groupings of music, but also to determine the size of the tonal space.
+
+```{r}
+#| label: fig-comps
+#| fig-cap: "Rand score comparisons between the three clustering methods."
+kable(
+tibble(`Model Comparison` = c("k-means - Heirarchical Clustering", 
+                              "k-means - Principal Components", 
+                              "Heirarchical Clustering - Principal Components"),
+       `Rand Index` = c(fossil::rand.index(km.clusters, hc1.clusters), 
+                        fossil::rand.index(km.clusters, pcahc_clusters),
+                        fossil::rand.index(hc1.clusters, pcahc_clusters))))
+```
+
+\newpage
+
+# References
+
+::: {#refs}
+:::
+
+\newpage
+
+# Supplementary Materials
+
+```{r}
+#| label: fig-kmeans
+#| fig-cap: "Count of observation in each cluster for k-means clustering."
+kable(table(km.out$cluster), col.names = c("Cluster", "Count"))
+```
+
+```{r}
+#| label: fig-corrmat
+#| fig-cap: "Correlation matrix of pitch-class distibutions"
+cor_mat <- round(cor(data[, 2:13]), 3)
+ggcorrplot(cor_mat, hc.order = TRUE)
+```
+
+```{r}
+#| label: fig-boxplot
+#| fig-cap: "Boxplots for each pitch-class feature. Each plot corresponds to a
+#| pitch class, between 0 and 11."
+ggplot(gather(data[, 2:13]), aes(y = value)) +
+  geom_boxplot() +
+  facet_wrap(~key, scales = "free") +
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank())
+```
+
+```{r}
+#| label: fig-silkmax
+#| fig-cap: "Average silhouette value for cluster size in k-means. k=12 was
+#| selected for clustering. NOTE: This plot is rendering differently in PDF than
+#| in R."
+avg_sil <- function(k) {
+  x_k <- kmeans(data[, 2:13], k, nstart = 20)
+  si <- silhouette(x_k$cluster, dist(data[, 2:13]))
+  mean(si[, 3])
+}
+
+k.values <- 2:24
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+tibble(`val` = avg_sil_values, `clusters` = c(2:24)) %>%
+  ggplot(aes(x = clusters, y = val)) +
+    geom_point() +
+    geom_line() +
+    geom_vline(xintercept = 12, colour = "red") +
+    xlab("Number of cluster (k)") +
+    ylab("Average Silhouette")
+```
+
+```{r}
+#| label: fig-silk1
+#| fig-cap: "Silhouette plot for k-means clustering, k=12. Red line indicates
+#| average value."
+kmeans_sil <- kmeans(data[, 2:13], 12, nstart = 20)
+sil1 <- silhouette(kmeans_sil$cluster, dist(data[, 2:13]))
+fviz_silhouette(sil1, print.summary = FALSE) +
+  ggtitle("")
+```
+
+```{r}
+#| label: fig-silk2
+#| fig-cap: "Silhouette plot for average linkage heirarchical clustering,  k=12s. Red line indicates average value."
+sil2 <- silhouette(hc1.clusters, dist(data[, 2:13]))
+fviz_silhouette(sil2, print.summary = FALSE) +
+  ggtitle("")
+```
+
+```{r}
+#| label: fig-silk3
+#| fig-cap: "Silhouette plot for average linkage heirarchical clustering,  k=12
+#| on principle components. Red line indicates average value."
+hc.out <- hclust(dist(pca$x[, 1:2]), method = "average")
+pcahc_clusters <- cutree(hc.out, 12)
+sil3 <- silhouette(pcahc_clusters, dist(data[, 2:13]))
+fviz_silhouette(sil3, print.summary = FALSE) +
+  ggtitle("")
+```
+
+```{r}
+#| label: fig-h_cluster
+#| fig-cap: "Dendrogram of heirarchical clustering. Labels have been removed to
+#| maintain legibility. Red line indicates cutting point for clustering"
+plot(hclust(data.dist, method = "average"), labels = FALSE, hang = -1,
+     cex = 1, main = "", sub="", xlab="")
+abline(h = 0.1575, col = "red")
+```
+
+```{r}
+#| label: fig-pca_hc
+#| fig-cap: "Dendrogram of heirarchical clustering pf principal components. 
+#| Labels have been removed to maintain legibility. Red line indicates cutting
+#| point for clustering" 
+plot(hc.out, hang = -1, cex = 1, labels = FALSE, main = "", sub=NA, xlab="") 
+abline(h = 0.08, col = "red")
+```
+
+```{r}
+#| label: fig-pca
+#| fig-cap: "Proportion of variance explained by each principle component. The
+#| first two components are used in subsequent analyses and account for ~75% of
+#| the variance in the data."
+tibble(`prop` = round(pca$sdev^2/sum(pca$sdev^2),3), `pc` = c(1:12)) %>%
+  ggplot(aes(x = as.factor(pc), y = prop)) +
+    geom_bar(stat="identity", aes(fill = "#6495ed")) +
+    xlab("Principle Component") +
+    ylab("Proportion of Variance") +
+    theme(legend.position = "none")    
+```
+
+ ```{r show_code, ref.label=all_labels()}
+ #| echo: TRUE
+ #| eval: FALSE
+ ```
