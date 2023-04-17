@@ -1,0 +1,286 @@
+---
+title: |
+    | Consonant & Dissonant Musical Sonorities:
+    | A Statistical Approach
+subtitle: (STATS/CSE 780 course project)
+author: |
+    | Konrad Swierczek
+    | Department of Psychology, Neuroscience, & Behaviour
+    | McMaster University
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{bbm}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{graphicx}
+   - \usepackage{float}
+   - \usepackage{apacite}
+   - \usepackage{natbib}
+output: 
+  beamer_presentation:
+    theme: "default"
+    colortheme: "seahorse"
+    slide_level: 2
+fontsize: 16pt
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "", fig.width = 9)
+################################################################################
+# Imports
+packages <- c("tidyverse", "dplyr", "readr","cluster", "factoextra", "ggplot2", "knitr", "ggcorrplot", "tidyr")
+lapply(packages, library, character.only = TRUE)
+################################################################################
+set.seed(75)
+```
+
+```{r data, include=FALSE, eval=FALSE}
+# Anatomy of Consonance Dataset
+# https://github.com/tuomaseerola/anatomy-of-consonance
+# Pull Data
+temp <- paste(tempfile(), ".zip", sep = "")
+options(timeout = 60 * 10)
+"https://github.com/tuomaseerola/DCD/archive/refs/heads/master.zip" %>%
+download.file(temp)
+experiment1 <- unz(temp, "DCD-master/data/DCD_predictors.csv") %>%
+  read_csv()
+"github.com/tuomaseerola/anatomy-of-consonance/archive/refs/heads/main.zip" %>%
+download.file(temp)
+link <- "anatomy-of-consonance-main/data/experiment2_data.csv"
+experiment2 <- unz(temp, link) %>%
+  read_csv()
+link <- "anatomy-of-consonance-main/data/experiment3_data.csv"
+experiment3 <- unz(temp, link) %>%
+  read_csv()
+# Missing values for feature variables>
+table(is.na(experiment3[, vars]))
+# Missing values for ratings
+table(is.na(experiment3[, 7]))
+# Missing values for rating SD/SE
+table(is.na(experiment3[, 8:9]))
+save(experiment3, file = "experiment3.RData")
+```
+
+```{r read_d}
+load("experiment3.RData")
+vars <- c(7, 11:27, 29:34, 37:39, 42)
+```
+
+```{r train_set, include = FALSE}
+train <- sample(nrow(experiment3), 0.5*nrow(experiment3))
+```
+
+```{r, eval=FALSE}
+library(tree)
+
+tree.carseats <- tree(rating~., data = experiment3[, c(vars, 3)])
+summary(tree.carseats)
+#table(Carseats$High)/sum(table(Carseats$High))
+plot(tree.carseats)
+text(tree.carseats, pretty = 0)
+```
+
+## Outline
+
+- Motivation
+- Dataset
+- Methods
+- Results
+- Discussion
+
+## Motivation
+
+- How can we better understand musical consonance and dissonance?
+- Why is this important?
+  + Classification and reccomendation systems
+  + Pedagogy, theory, and practice
+  + Not just music! Auditory perception more generally
+- @har20, @anatomy21
+  + Aggregated datasets and models
+  + Exploratory correlational analysis
+- Goals:
+  + Which theories are consistent with behavioural data?
+  + Improve the state-of-the-art model using statistical methods
+
+## Data
+
+- @anatomy21
+
+  + Nine human rating experiments
+  + 3 ratings, 8 metadata, 3 unknown, 29 features
+
+```{r, out.width="100%", out.height="100%"}
+library(ggpubr)
+library(gridExtra)
+grid.arrange(
+  ggarrange(
+    experiment3[, c(3, 27, 22, 16)] %>%
+    gather(feature, val, -rating) %>%
+    ggplot(aes(x = rating, y = val)) +
+      geom_point(size = 0.5) +
+      facet_wrap(~feature, scales = "free") +
+      ylab("Value") +
+      theme(strip.text = element_text(size = 6),
+      plot.margin = margin(0, 0.5, 0, 0.5, "cm")),
+
+    round(cor(experiment3[, vars]), 3) %>%
+    ggcorrplot(insig = "blank", type = "lower") +
+      theme(axis.text.x=element_blank(), #remove x axis labels
+        axis.ticks.x=element_blank(), #remove x axis ticks
+        axis.text.y=element_blank(),  #remove y axis labels
+        axis.ticks.y=element_blank(),
+        plot.margin = margin(0, 0.5, 0, 0.5, "cm")  #remove y axis ticks
+        )),
+
+  ggtexttable(head(round(experiment3[, c(3, 7, 16, 28, 22, 29)], 2), n = 3)) +
+    theme(plot.margin = margin(-5, 0, 0, 0, "cm")),
+    ncol = 1)
+```
+
+
+
+## Methods
+- Multiple Linear Regression with Forward Stepwise Selection
+  + Bayesian Information Criterion
+- Principal Component Analysis
+  + Scaling of features
+  + Multiple Linear Regression on first 4 components
+
+- 50/50 training set split
+  + Testing: how similar are model predictions to actual human ratings?
+  + Comparison between models and to state-of-the-art model
+
+```{r linreg, warning=FALSE, message=FALSE, include=FALSE}
+library(leaps)
+
+regfit.full <- regsubsets(rating ~ ., data = experiment3[train, c(vars, 3)], nvmax = 28, method = "forward")
+
+#plot(
+#  summary(regfit.full)$adjr2, 
+#  xlab = "Number of Variables",
+#  ylab = "Adjusted RSq", 
+#  type = "l")
+
+#which.max(summary(regfit.full)$adjr2)
+#summary(regfit.full)$which[which.max(summary(regfit.full)$adjr2), ]
+
+#plot(
+#  summary(regfit.full)$bic, 
+#  xlab = "Number of Variables",
+#  ylab = "BIC", 
+# type = "l")
+
+#which.min(summary(regfit.full)$bic)
+#summary(regfit.full)$which[which.min(summary(regfit.full)$bic), ]
+
+
+# Find out coefficient in the best model
+coefi <- coef(regfit.full, id = which.min(summary(regfit.full)$bic))
+test.mat <- model.matrix(rating ~ ., data = experiment3[-train, c(vars, 3)])
+pred <- test.mat[, names(coefi)] %*% coefi
+#tibble(`pred` = pred[,1], rating = experiment3$rating[-train]) %>%
+#gather(type, val) %>%
+#ggplot(aes(x = val, fill = type)) +
+#  geom_histogram()
+```
+
+```{r pca}
+# Principle component analysis
+pca <- prcomp(experiment3[, vars], scale = TRUE)
+#km.out <- kmeans(pca$x[, 1:2], 2, nstart = 20)
+#km.clusters <- km.out$cluster
+#as_tibble(pca$x[, 1:2]) %>%
+#  add_column(`cluster` = km.clusters) %>%
+#    ggplot(aes(x = PC1, y = PC2)) +
+#      geom_point(aes(colour = as.factor(cluster))) +
+#      labs(colour = "Cluster")
+
+#tibble(`prop` = round(pca$sdev^2/sum(pca$sdev^2),3), `pc` = c(1:28)) %>%
+#  ggplot(aes(x = as.factor(pc), y = prop)) +
+#    geom_bar(stat="identity", aes(fill = "#6495ed")) +
+#    xlab("Principle Component") +
+#    ylab("Proportion of Variance") +
+#    theme(legend.position = "none")
+
+#get_pca_var(pca)$contrib
+
+#fviz_contrib(pca, choice = "var", axes = 1, top = 10)
+```
+
+```{r pca_lm}
+pca_data <- as_tibble(pca$x) %>%
+add_column(rating = experiment3$rating)
+lm.fit_2 <- lm(rating ~ ., data = pca_data[train, ])
+pred_2 <- predict(lm.fit_2, pca_data[-train, ])
+```
+
+## Results
+
+```{r predictions, out.width="100%", out.height="100%"}
+lm.sota <- lm(rating ~ har_19_composite, data = experiment3[, c(3, 28)])
+pred_3 <- predict(lm.sota, experiment3[-train, ])
+
+
+
+
+grid.arrange(
+  
+  as_tibble(pca$x) %>%
+add_column(rating = experiment3$rating) %>%
+ggplot(size = 0.5, aes(colour = rating, x = PC1, y = PC2)) +
+  geom_point() +
+  scale_colour_viridis_c() +
+  guides(size = FALSE), 
+
+  experiment3[, c(3, 28)] %>%
+ggplot(aes(x = rating, y = har_19_composite)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE),
+
+ggtexttable(tibble(Feature = names(coefi), Coefficient = round(coefi,2))) +
+theme(plot.margin = margin(-2, 0, 0, 0, "cm")),
+ggtexttable(
+tibble(`Model` = c("Linear Reg.", "PCA Linear Reg.", "Harrison 2020"),
+       `Mean Error` = c(round(mean(abs(experiment3$rating[-train] - pred)),2),
+                       round(mean(abs(experiment3$rating[-train] - pred_2)),2),
+                       round(mean(abs(experiment3$rating[-train] - pred_3)),2)),
+       `Standard Deviation` = c(round(sd(abs(experiment3$rating[-train] - pred)), 2),
+                               round(sd(abs(experiment3$rating[-train] - pred_2)), 2),
+                               round(sd(abs(experiment3$rating[-train] - pred_3)), 2)))) +
+                               theme(plot.margin = margin(-5, 0, 0, 0, "cm")),  
+ncol = 2)
+```
+
+## Discussion
+
+- What have we learned about the features?
+  + Models use similar features to @har20
+  + A better sense of what's useful and what's not
+- Model Selection
+  + Curse of Dimensionality: too many features!
+  + Is redudancy helpful?
+  + Is linear regression the right approach?
+- Interpretability
+  + PCA can help clarify the complexity of this dataset
+- Stability
+  + Human subjective ratings = noise
+  + Distributions not observations
+  + Training model on corpus instead or ratings
+
+##
+
+  \begin{center}
+			\textbf{{\LARGE Thank You!}}
+
+      All materials and analyses are fully reproducible at: https://github.com/konradswierczek/STATS780
+
+      \includegraphics[width=0.3\columnwidth]{github_qrcode.png}
+		\end{center}
+
+		
+## References
+::: {#refs}
+:::

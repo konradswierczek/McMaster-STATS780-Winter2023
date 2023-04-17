@@ -1,0 +1,363 @@
+---
+title: |
+  | Consonant & Dissonant Musical Sonorities:
+  | A Statistical Approach
+subtitle: |
+  |
+  | STATS/CSE 780
+  | Project Report
+author: "Konrad Swierczek - 001423065"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+header-includes:
+   - \usepackage{float}
+   - \usepackage[font={footnotesize}]{caption}
+   - \usepackage{fancyhdr}
+   - \pagestyle{fancy}
+   - \fancyhf{}
+   - \fancyhead[L]{STATS 780 Project Report}
+   - \fancyhead[R]{\thepage}
+format: 
+  pdf:
+    fontsize: "11pt"
+geometry: margin = 1in
+linestretch: 1.5
+bibliography: references.bib
+output-file: "kswierczek_projectreport" 
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+# knitr code chunk configuration
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+################################################################################
+# Imports
+packages <- c("tidyverse", "dplyr", "readr", "cluster", "factoextra", "ggplot2",
+              "knitr", "ggcorrplot", "tidyr", "tree", "ggpubr", "gridExtra", 
+              "leaps")
+lapply(packages, library, character.only = TRUE)
+################################################################################
+# Set random seed for reproducible samples.
+set.seed(75)
+```
+
+# Introduction
+
+Considerable debate has been devoted to musical consonance and dissonance, the pleasantness of a collection of tones or sounds. The study of this phenomenon goes as far back as Pythagoras, but in the 20th and 21st centuries our understanding of acoustics, auditory perception, and mathematics led to sophisticated solutions using modelling and systematic experimental testing. Theories ranging from "roughness" (the interaction of tones on the basilar membrane of the inner ear) [@plomp65; @kam69I; @kam69II; @hutch78; @hutch79; @mashinter06], "harmonicity" or "periodicity" (how similar is a collection of tones to a harmonic series) [@parn88; @milne16; @har18], and familiarity as facilitated by inculturation [@zaj01, @parn11, @jl12, @mcder16, @lah22] have been proposed as solutions to understanding this complex percept. @har20 and @anatomy21 set out to compare these various frameworks of consonance and dissonance to human behavioural data; specifically, ratings of consonance or dissonace of western musical sounds. Both studies conclude that a combination of the these models or frameworks may be necessary to explain the underlying mechanisms of consonance and dissonance. Here, a re-examination of the datasets explored in @har20 and @anatomy21 will attempt to develop a improved composite model for predicting behavioural ratings using these base models. Further, the individual contributions of these base models will be examined in an effort to better understand what features are particularly relevant to the perception of consonance and dissonance. To achieve this goal, both supervised and unsupervised statistical learning methods will be used to train two models to predict human ratings: one using a subset of the features available, and one using all of the features available.^[All materials and reproducible code used are available at https://github.com/konradswierczek/STATS780] 
+
+```{r data, eval=FALSE}
+# Anatomy of Consonance Dataset: Tuomas Eerola
+# https://github.com/tuomaseerola/anatomy-of-consonance
+# Retreive data from GitHub repo.
+temp <- paste(tempfile(), ".zip", sep = "")
+options(timeout = 60 * 10)
+"https://github.com/tuomaseerola/DCD/archive/refs/heads/master.zip" %>%
+download.file(temp)
+experiment1 <- unz(temp, "DCD-master/data/DCD_predictors.csv") %>%
+  read_csv()
+"github.com/tuomaseerola/anatomy-of-consonance/archive/refs/heads/main.zip" %>%
+download.file(temp)
+link <- "anatomy-of-consonance-main/data/experiment2_data.csv"
+experiment2 <- unz(temp, link) %>%
+  read_csv()
+link <- "anatomy-of-consonance-main/data/experiment3_data.csv"
+experiment3 <- unz(temp, link) %>%
+  read_csv()
+# Save data locally.
+save(experiment3, file = "data/experiment3.RData")
+save(experiment2, file = "data/experiment2.RData")
+save(experiment1, file = "data/experiment1.RData")
+```
+
+```{r data_prep}
+# Load data from local files.
+load("data/experiment3.RData")
+# Specify feature/model variables.
+vars <- c(7, 11:27, 29:34, 37:39, 42)
+# Split observations into training and testing sets: 50/50 split.
+train <- sample(nrow(experiment3), 0.5 * nrow(experiment3))
+```
+
+# Anatomy of Consonance Dataset
+
+## Summary
+
+The Anatomy of Consonance dataset [@anatomy21] is a collection of 9 datasets with 617 observations from human behaviour experiments on consonance and dissonance perception. It includes 33 feature variables, 7 metadata properties, and 3 normalized rating variables which correspond to the mean, standard deviation and standard error of multiple human participant ratings for a particular sound (observation). The features were selected by @har20 and @anatomy21 from the literature based on relevance. Many of these are roughness, harmonicity, or familiarity models, in addition to spectral and numerosity features. The ratings have been normalized between 1 and 10 (see @fig-ratings), while the feature variables have predominantly continous values on arbitrary scales based on each individual model. 28 of the feature variables are continous, while one is categorical (chord_size) and was recoded as dummy variables for regression analysis. However, due to the repetious nature of music in the contemporary western tuning system (Twelve Tone Equal Temperment), some of the features representing harmonicity are transposition invariant and have the same values regardless of their ordering or pitch height. As a results, features such as "jl_12_tonal" appear to be pseudo-categorical. They are not treated as categorical variables here as these models have been intended to be continous in the larger context of sounds more generally.
+
+```{r, out.width="75%"}
+#| label: fig-ratings
+#| fig-cap: "Distribution of ratings across 617 observations. Each observation
+#| is the average of all participants in the experiment."
+# Distribution of ratings
+binwidth <- function(col) ((max(col)-min(col))/sqrt(length(col)))
+ggplot(experiment3, aes(x = rating)) +
+  geom_histogram(binwidth = binwidth(experiment3$rating),
+                 colour = "black", fill = "cornflowerblue") +
+  xlab("Rating (1-10)") +
+  ylab("Frequency")
+```
+
+Three feature variables were excluded due to lack of documentation on what they represent, and lack of use in previous analyses ("TDL", "TDL1", "neg_log_prob"). All feature variables were scaled before the analysis (see @fig-features) as their scales are generally arbitrary and vary across the models. No outliers were removed from the data since the rating values are already normalized and aggregated from a distribution, and the feature variables come from a predefined geometric space. No missing values were found for either the rating values or any of the feature variables (see @fig-miss-vals in Suplementary Materials). However, rating variablity measures (Standard Deviation and Standard Error) were not included for a large portion of the observations. While this is not discussed in detail by @anatomy21, some of the observations may not be summaries of distributions. While is not relevant for the present study since it relies only on the ratings, one of the weaknesses of this dataset is the aggregated nature of the observations: individual participant ratings would provide a more robust sample.
+
+## Exploratory Analysis
+
+@fig-features shows each of the features plotted against ratings. Some of the features such as roughness and harmonicity/periodicty appear to have a linear relation with ratings, while many of the features describing the spectralm profile appear to have a weaker association. Correlation analysis between the variables and rating (@fig-correlations) show that many of the variables have strong positive or negative correlations with the ratings (harmonicity is thought to predict consonance while roughness is thought to predict dissonance). Correlations between variables are highly variable, however high association between many of the variables make this dataset a good candidate for principle component analysis.  @fig-ratings shows the distribution of rating values, which appears to be slightly skewed or bimodal distribution consistent with the idea that chords are grouped into consonant or dissonant (the peak at a lower value is also consistent with the western music general preference for consonant sounds).
+
+```{r, fig.width=8, fig.height=12}
+#| label: fig-correlations
+#| fig-cap: "Correlation matrix of all feature variables (top) and correlation
+#| coefficients between feature variables and ratings (bottom)."
+# Correlations between feature variables and rating values
+cors <- tibble("Correlation Coefficient" = 
+  round(cor(experiment3[, colnames(experiment3[, vars])],
+    experiment3$rating), 3)[, 1],
+      "Feature Variable" = colnames(experiment3[, vars])) %>%
+arrange(`Correlation Coefficient`)
+ggarrange(
+# Correlations between feature variables
+  round(cor(experiment3[, vars]), 3) %>%
+  ggcorrplot(insig = "blank", type = "lower") +
+    theme(axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks.y=element_blank()),
+  ggarrange(
+    ggtexttable(cors[1:14, ]),
+    ggtexttable(cors[15:28, ]),
+    ncol = 2),
+  ncol = 1
+)
+```
+
+```{r fig.height=11, fig.width=8.5}
+#| label: fig-features
+#| fig-cap: "Scatterplots for each feature variable against rating values.
+#| Continous variables have been scaled. Note that features such jl_12_tonal
+#| appear to be categorical but are not intended to be when considering the
+#| broader context of sounds."
+# Scaled feature variables and ratings.
+experiment3[, c(3, vars)] %>%
+mutate_at(2:29, ~(scale(.) %>% as.vector)) %>%
+gather(feature, val, -rating) %>%
+ggplot(aes(x = rating, y = val, colour = feature)) +
+  geom_point(size = 0.5) +
+  facet_wrap(~feature, scales = "free", ncol = 4) +
+  ylab("Value") +
+  xlab("Rating (1-10)") +
+  theme(strip.text = element_text(size = 6),
+  legend.position = "none",
+  plot.margin = margin(0, 0.5, 0, 0.5, "cm"))
+```
+
+# Methods
+
+First, linear regression using forward stepwise subset selection was performed on the dataset to create a model that predicts rating while also selecting the best features out of the larger pool. Bayesian Information Criterion was used to select the size of the model since the state-of-the-art model only uses 3 components and thus a conservative selection criterion is appropriate to avoid overfitting. However, the above approach does not guarantee the subset of features selected will represent the most suitable group of features, much less an approximation of human perception since all of these features have in their own way been implicated in perceptual processes. A second linear regression will be performed on components generated using principal component analysis. The performance of these two different approaches was compared directly on a hold-out dataset, and also to the state-of-the-art model. These two approaches use different underlying assumptions to develop a model for consonance and dissonance: one uses as much information as possible, relying on the redundancy in the dataset, while the other focuses exclusivley on the best subset of features and is therefore a simpler model. All analyses were performed in R [@citeR]
+
+```{r linreg, echo=FALSE, include=FALSE, message=FALSE}
+# Modifying categorical variable before analysis
+lm_data <- experiment3 %>%
+mutate(chord_size = as.factor(chord_size))
+# Forward stepwise subset selection
+regfit.full <- regsubsets(rating ~ ., data = lm_data[train, c(3, vars)], 
+                          nvmax = 28, method = "forward")
+```
+
+```{r}
+#| label: fig-subset_selection
+#| fig-cap: "Bayesian Information Criterion for given amount of variables. 7
+#| was selected as an ideal minimum based on this plot."
+# BIC for model complexity.
+plot(
+  summary(regfit.full)$adjr2, 
+  xlab = "Number of Variables",
+  ylab = "BIC", 
+  type = "l")
+bic_min <- which.min(summary(regfit.full)$bic)
+# Find out coefficients in the best model.
+coefi <- coef(regfit.full, id = which.min(summary(regfit.full)$bic))
+```
+
+# Results
+
+Bayesian Information Criterion minimum value determined `r bic_min` features as the optimal model size. These 10 features and their regression coefficients are identified in @fig-mlinreg_coefi. Most notably, familiarity and harmonicity features were prominent in the selection process, with spectral features also being included. @fig-mlinreg shows each feature in the model individually.
+
+Principle component analysis show that 7 components explained over 80% of the variance in the dataset, with the first component only accounting for ~35% (@fig-pca_var). Further analysis of the component loadings show that component 1 is predominant represented by roughness and harmonicity features, while subsequent components are represented by spectral features, familiarity, and harmonicity (@fig-pca_features). A multiple linear regression model using the first 7 components was used to predict ratings: the first two dimensions are visualized in @fig-pca.  
+
+```{r pca, fig.width=8.5}
+#| label: fig-pca_var
+#| fig-cap: "Two plots showing the proportion of variance explained by each
+#| principal component. The first plot shows the proportion of variance for each
+#| component while the second shows the cumulative proportion. 7 components were
+#| selected as they account for over 80% of the variance (see lines)."
+# Principle component analysis
+pca <- prcomp(experiment3[, vars], scale = TRUE)
+pca_df <- tibble(`prop` = round(pca$sdev^2/sum(pca$sdev^2),3), `pc` = c(1:28),
+       `cum` = cumsum(pca$sdev^2 / sum(pca$sdev^2)))
+ggarrange(
+# Variance explained by each principle component.
+  ggplot(pca_df, aes(x = pc, y = prop)) +
+    geom_bar(stat="identity", aes(fill = "#6495ed")) +
+    xlab("Principle Component") +
+    ylab("Proportion of Variance") +
+    theme(legend.position = "none"),
+# Cumulative variance explained for n principle components.
+  ggplot(pca_df, aes(x = pc, y = cum, group = 1)) +
+    geom_line() +
+    geom_point() +
+    geom_line(aes(y = 0.8, colour = "red")) +
+    geom_line(aes(x = 7, colour = "black")) +
+    xlab("Number of Principle Components") +
+    ylab("Cumulative Variance") +
+    theme(legend.position = "none"),
+  ncol = 2
+  )
+```
+
+Accuracy of the models was evaluated by taking the absolute difference between the prediction and actual rating value across all observations in the hold-out set. @fig-model_accuracy shows the results of this test procedure, including predictions by the state-of-the-art model developed in @har20. The feature selection model did not outperform the state-of-the-art model, but did have lower variability. However, the PCA model marginally outperformed the state-of-the-art model on both average rating error and variability.
+
+```{r, fig.width=8.5, fig.height=11}
+#| label: fig-mlinreg
+#| fig-cap: "Regression lines for each variable selected against rating values."
+# Mutating dataset for dummy variables in regression.
+lm_data2 <- lm_data %>%
+mutate(chord_size2 = ifelse(experiment3$chord_size == 2, 1, 0)) %>%
+mutate(chord_size3 = ifelse(experiment3$chord_size == 3, 1, 0)) %>%
+mutate(chord_size4 = ifelse(experiment3$chord_size == 4, 1, 0)) %>%
+mutate(chord_size5 = ifelse(experiment3$chord_size == 5, 1, 0)) %>%
+mutate(chord_size6 = ifelse(experiment3$chord_size == 6, 1, 0)) %>%
+mutate(chord_size7 = ifelse(experiment3$chord_size == 7, 1, 0)) %>%
+mutate(chord_size8 = ifelse(experiment3$chord_size == 8, 1, 0))
+# Plotting each variable in multiple linear regression analysis.
+lm_data2[-train, c("rating", names(coefi)[-1])] %>%
+gather(`feature`, `val`, -`rating`) %>%
+ggplot(aes(x = rating, y = val)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  xlab("Rating Value (1-10)") +
+  facet_wrap(~feature, scales = "free")
+```
+
+```{r, fig.width=8.5, fig.height=11}
+#| label: fig-pca_features
+#| fig-cap: "Cos2 of 7 most influential variable loadings for the first 7
+#| principal components (notated as 'dim' here). Component 1 is predominantly
+#| driven by roughness and harmonicity, component 2 is driven by the spectral
+#| quality of the sound, and component 3 is driven by familiarity."
+# PCA Variable loadings: top 7 variables for top 7 components.
+grid.arrange(
+  fviz_cos2(pca, choice = "var", axes = 1, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 2, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 3, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 4, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 5, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 6, top = 7),
+  fviz_cos2(pca, choice = "var", axes = 7, top = 7),
+  ncol = 3
+)
+```
+
+```{r pca_lm}
+#| label: fig-pca
+#| fig-cap: "First two principal components plotted against ratings in colour.
+#| The first two components account for ~50% of the variance in the data."
+# PCA linear regression: first two components plotted with ratings in colour.
+pca_data <- as_tibble(pca$x) %>%
+add_column(rating = experiment3$rating)
+lm.fit_2 <- lm(rating ~ ., data = pca_data[train, ])
+as_tibble(pca$x) %>%
+add_column(rating = experiment3$rating) %>%
+ggplot(size = 0.5, aes(colour = rating, x = PC1, y = PC2)) +
+  geom_point() +
+  scale_colour_viridis_c() +
+  guides(size = FALSE)
+```
+
+```{r predictions}
+# Predictions on hold-out set for each model.
+test.mat <- model.matrix(rating ~ ., data = lm_data2[-train, c(3, vars, 45:51)])
+pred <- test.mat[, names(coefi)] %*% coefi
+pred_2 <- predict(lm.fit_2, pca_data[-train, ])
+lm.sota <- lm(rating ~ har_19_composite, data = experiment3[, c(3, 28)])
+pred_3 <- predict(lm.sota, experiment3[-train, ])
+```
+
+# Discussion
+
+These results, particuarly of the principle component analysis, build on the findings of @har20 and @anatomy21, showing that harmonicity and roughness are the most significant contributors to the subjective perception of consonance and dissonance. Further, the spectral qualities of the sound as well as numeroisty appear to be significant contributors despite being fairly unassociated on their own and their exclusion in many of the models in this dataset. Future work may analyze the principle component loadings in more detail to remove features that may be redundant and not actively contributing to interpretability and prediction accuracy of the model. This dataset includes a variety of information, particularly in the case of the selection model, suffers from the curse of dimensionality which may account for the worsened accuracy. Other dimensionality reduction and statistical techniques such as commonality analysis may help with identifying redundancy in the data to overcome this issue. However, given the marginal improvement in accuracy of the PCA model and the increased complexity in comparison to the state-of-the-art model, these may not be practical improvements. The computational cost of the PCA model is significant considering all these models must be calculated for each simultaneous collection of pitches in a piece of music (genrally in the order of hundreds). While the cost is decreased for the feature selected model, these approaches are still impractical for uses in Music Information Retreival and music classification/reccomendation. The pseudo-categorical nature of harmonicity variables discussed above should be explored in more detail. If in a larger collection of sounds (an appropriate dataset is discussed in @anatomy21) shows that western musical sounds are categorical for harmonicity, statistical approaches in modelling consoannce and dissonance should be revised to reflect this. An additional challenge with the PCA model relates to reproduction, since prediction is based on principle components, not specific features. However, the loadings of each component can be used to weigh the original features for prediction of new data.
+
+```{r}
+#| label: fig-sota_model
+#| fig-cap: "Current state-of-the-art model as developed in Harrison & Pearce
+#| 2019 (line), plotted against the test set (points). This model is a composite
+#| which uses harmonicity, roughness, and familiarity."
+# Harrison 2019 model against ratings.
+experiment3[-train, c(3, 28)] %>%
+ggplot(aes(x = rating, y = har_19_composite)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  xlab("Rating Value (1-10)")
+```
+
+```{r}
+#| label: fig-model_accuracy
+#| fig-cap: "Model accuracy for three discussed models. The first two models 
+#| were developed in this study, while Harrison 2019 is the current
+#| state-of-the-art model. Mean  and standard deviation error was computed by
+#| taking the absoulte difference between the prediction and actual value in the
+#| test set Both models developed here slightly outperform Harrison 2019."
+# Prediction accuracy of each model
+ggtexttable(
+tibble(`Model` = c("Stepwise Linear Reg.", "PCA Linear Reg.", "Harrison 2019"),
+  `Mean Error` = c(round(mean(abs(experiment3$rating[-train] - pred)),2),
+                   round(mean(abs(experiment3$rating[-train] - pred_2)),2),
+                   round(mean(abs(experiment3$rating[-train] - pred_3)),2)
+                   ),
+  `Standard Deviation` = c(round(sd(abs(experiment3$rating[-train] -
+                                        pred)), 2),
+                           round(sd(abs(experiment3$rating[-train] -
+                                        pred_2)), 2),
+                           round(sd(abs(experiment3$rating[-train] -
+                                        pred_3)), 2)
+                                ))) +
+  theme(plot.margin = margin(-5, 0, 0, 0, "cm"))
+```
+
+\newpage
+
+# References
+
+::: {#refs}
+:::
+
+\newpage
+
+# Supplementary Materials
+
+```{r}
+#| label: fig-miss-vals
+#| fig-cap: "Missing values for each data type."
+# Missing value analysis for ratings and feature variables
+ggtexttable(tibble(
+  `Category` = c("Ratings", "Features", "Rating Variability"),
+  `Missing Values` = c(table(is.na(experiment3[, 7]))["FALSE"] - 
+    nrow(experiment3[, 7])
+, table(is.na(experiment3[, vars]))["FALSE"] - prod(dim(experiment3[, vars])),
+  table(is.na(experiment3[, 4:5]))["FALSE"] - prod(dim(experiment3[, 4:5]))
+)
+))
+```
+
+```{r}
+#| label: fig-mlinreg_coefi
+#| fig-cap: "Regression coeffients for forward-stepwise subset selection."
+# Subset Selection feature coefficients.
+ggtexttable(tibble(Feature = names(coefi), Coefficient = round(coefi, 2))) +
+theme(plot.margin = margin(-2, 0, 0, 0, "cm"))
+```
+
+ ```{r show_code, ref.label=all_labels()}
+ #| echo: TRUE
+ #| eval: FALSE
+ #| output: asis
+ ```
